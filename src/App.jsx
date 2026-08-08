@@ -51,7 +51,7 @@ export default function App() {
 
   return <main className="min-h-dvh bg-slate-950 text-slate-100"><section className="mx-auto flex min-h-dvh w-full max-w-xl flex-col px-4 py-5 sm:px-6">
     <header className="mb-4 flex items-center justify-between gap-4">
-      <h1 className="text-lg font-bold tracking-tight">Stuttering Pacer <span className="text-sky-400">Practice</span></h1>
+      <h1 className="text-lg font-bold tracking-tight">Articulation Pacer <span className="text-sky-400">Practice</span></h1>
       <div className="flex gap-1.5"><IconButton label={isPlaying ? 'Pause' : 'Play'} onClick={playPause}>{isPlaying ? <Pause /> : <Play fill="currentColor" />}</IconButton><IconButton label="Reset" onClick={stop}><RotateCcw /></IconButton></div>
     </header>
     <section className="mb-4 rounded-2xl border border-slate-700 bg-slate-800 p-4 shadow-lg shadow-black/10">

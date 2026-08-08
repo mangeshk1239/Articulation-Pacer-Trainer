@@ -1,8 +1,8 @@
-# Application Context: Stuttering Pacer & Articulation Trainer
+# Application Context: Articulation Pacer & Trainer
 
 ## Purpose
 
-The application supports paced reading exercises commonly used in stuttering and speech-articulation practice. It combines a gentle pre-speech breath cue with a word-by-word visual pace, helping the user practise easier onsets, continuous airflow, light articulatory contact, and intentional pauses.
+The application supports paced reading exercises for speech-articulation practice. It combines a gentle pre-speech breath cue with a word-by-word visual pace, helping the user practise easier onsets, continuous airflow, light articulatory contact, and intentional pauses.
 
 It is a self-guided practice aid, not a diagnostic or clinical treatment tool.
 

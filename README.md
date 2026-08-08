@@ -1,6 +1,6 @@
-# Stuttering Pacer & Articulation Trainer
+# Articulation Pacer & Trainer
 
-A mobile-first React app for structured stuttering practice. It helps a user prepare a target sound, use a breathing cue, and read at a steady, adjustable pace.
+A mobile-first React app for structured articulation practice. It helps a user prepare a target sound, use a breathing cue, and read at a steady, adjustable pace.
 
 ## Features
 
@@ -35,7 +35,7 @@ The project is configured to publish the generated `dist` folder to a `gh-pages`
 ```bash
 git init
 git add .
-git commit -m "Build stuttering pacer"
+git commit -m "Build articulation pacer"
 git branch -M main
 git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
 git push -u origin main
