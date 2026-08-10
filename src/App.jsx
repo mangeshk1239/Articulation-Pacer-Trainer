@@ -1,14 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, Shuffle, Volume2, VolumeX } from 'lucide-react'
+import {
+  Activity,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  CirclePause,
+  Feather,
+  Gauge,
+  GraduationCap,
+  Pause,
+  Play,
+  Rabbit,
+  RotateCcw,
+  Shuffle,
+  Target,
+  Turtle,
+  UserRoundCog,
+  Volume2,
+  VolumeX,
+  Wind,
+} from 'lucide-react'
 import { practiceData } from './data'
 
 const dayNames = Object.keys(practiceData)
-const checklist = ['Full Breath Taken', 'Light Contact Used', 'Controlled Rate', 'Paused at Punctuation']
+const checklist = [
+  { label: 'Full Breath Taken', icon: Wind, tone: 'sky' },
+  { label: 'Light Contact Used', icon: Feather, tone: 'violet' },
+  { label: 'Controlled Rate', icon: Activity, tone: 'emerald' },
+  { label: 'Paused at Punctuation', icon: CirclePause, tone: 'amber' },
+]
+const punctuationDelayOptions = [2, 3, 5, 10, 15]
 
-function punctuationPauseMs(word, wpm, pauseScale) {
-  const wordDuration = (60 / wpm) * 1000
-  if (/[.!?][”"')\]]*$/.test(word)) return wordDuration * 0.85 * (pauseScale / 100)
-  if (/[,;:][”"')\]]*$/.test(word)) return wordDuration * 0.45 * (pauseScale / 100)
+function punctuationPauseMs(word, punctuationDelaySeconds) {
+  if (/[.,;:!?][”"')\]]*$/.test(word)) return punctuationDelaySeconds * 1000
   return 0
 }
 
@@ -21,10 +45,21 @@ export default function App() {
   const [dayIndex, setDayIndex] = useState(() => Math.max(0, dayNames.indexOf(savedValue('articulation-pacer-day', 'Mon'))))
   const [text, setText] = useState(() => practiceData[savedValue('articulation-pacer-day', 'Mon')]?.texts[0] || practiceData.Mon.texts[0])
   const [wpm, setWpm] = useState(() => Math.min(200, Math.max(60, Number(savedValue('articulation-pacer-wpm', 100)) || 100)))
-  const [pauseScale, setPauseScale] = useState(() => Math.min(200, Math.max(0, Number(savedValue('articulation-pacer-pause-scale', 100)) || 0)))
+  const [punctuationDelaySeconds, setPunctuationDelaySeconds] = useState(() => {
+    const savedDelay = Number(savedValue('articulation-pacer-punctuation-delay-seconds', 2))
+    return punctuationDelayOptions.includes(savedDelay) ? savedDelay : 2
+  })
   const [status, setStatus] = useState('Ready')
   const [activeWordIndex, setActiveWordIndex] = useState(0)
-  const [checks, setChecks] = useState(() => { try { const value = JSON.parse(savedValue('articulation-pacer-checks', '[]')); return Array.isArray(value) ? value.filter((item) => checklist.includes(item)) : [] } catch { return [] } })
+  const [checks, setChecks] = useState(() => {
+    try {
+      const value = JSON.parse(savedValue('articulation-pacer-checks', '[]'))
+      const checklistLabels = checklist.map((item) => item.label)
+      return Array.isArray(value) ? value.filter((item) => checklistLabels.includes(item)) : []
+    } catch {
+      return []
+    }
+  })
   const [completed, setCompleted] = useState(false)
   const [soundEnabled, setSoundEnabled] = useState(() => savedValue('articulation-pacer-sound', 'false') === 'true')
   const audioContextRef = useRef(null)
@@ -52,7 +87,7 @@ export default function App() {
 
   useEffect(() => { window.localStorage.setItem('articulation-pacer-day', dayNames[dayIndex]) }, [dayIndex])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-wpm', String(wpm)) }, [wpm])
-  useEffect(() => { window.localStorage.setItem('articulation-pacer-pause-scale', String(pauseScale)) }, [pauseScale])
+  useEffect(() => { window.localStorage.setItem('articulation-pacer-punctuation-delay-seconds', String(punctuationDelaySeconds)) }, [punctuationDelaySeconds])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-checks', JSON.stringify(checks)) }, [checks])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-sound', String(soundEnabled)) }, [soundEnabled])
 
@@ -69,20 +104,26 @@ export default function App() {
   }, [status, playTone])
 
   useEffect(() => {
-    if (status === 'Running') playTone(660)
+    if (status === 'Running') playTone(660, 0.1, 0.09)
   }, [status, activeWordIndex, playTone])
 
   useEffect(() => {
     if (status !== 'Running') return
     if (!words.length) { setStatus('Ready'); return }
     const currentWord = words[activeWordIndex]
-    const delay = (60 / wpm) * 1000 + punctuationPauseMs(currentWord, wpm, pauseScale)
+    const delay = (60 / wpm) * 1000 + punctuationPauseMs(currentWord, punctuationDelaySeconds)
     const timer = setTimeout(() => {
-      if (activeWordIndex >= words.length - 1) { setStatus('Ready'); setActiveWordIndex(0); setCompleted(true); playTone(784, 0.35, 0.06); return }
+      if (activeWordIndex >= words.length - 1) {
+        setStatus('Ready')
+        setActiveWordIndex(0)
+        setCompleted(true)
+        playTone(784, 0.35, 0.06)
+        return
+      }
       setActiveWordIndex((current) => current + 1)
     }, delay)
     return () => clearTimeout(timer)
-  }, [status, wpm, pauseScale, words, activeWordIndex, playTone])
+  }, [status, wpm, punctuationDelaySeconds, words, activeWordIndex, playTone])
 
   const stop = () => { setStatus('Ready'); setActiveWordIndex(0) }
   const startPractice = () => { if (!words.length) return; setCompleted(false); setActiveWordIndex(0); playTone(392, 0.22, 0.05); setStatus('Breathing') }
@@ -90,36 +131,169 @@ export default function App() {
   const changeDay = (direction) => {
     stop()
     const next = (dayIndex + direction + dayNames.length) % dayNames.length
-    setDayIndex(next); setText(practiceData[dayNames[next]].texts[0]); setChecks([]); setCompleted(false)
+    setDayIndex(next)
+    setText(practiceData[dayNames[next]].texts[0])
+    setChecks([])
+    setCompleted(false)
   }
-  const shuffle = () => { stop(); setCompleted(false); const choices = focus.texts.filter((item) => item !== text); setText(choices[Math.floor(Math.random() * choices.length)] || focus.texts[0]) }
+  const shuffle = () => {
+    stop()
+    setCompleted(false)
+    const choices = focus.texts.filter((item) => item !== text)
+    setText(choices[Math.floor(Math.random() * choices.length)] || focus.texts[0])
+  }
 
-  return <main className="min-h-dvh bg-slate-950 text-slate-100"><section className="mx-auto flex min-h-dvh w-full max-w-xl flex-col px-4 py-5 sm:px-6">
-    <header className="mb-4 flex items-center justify-between gap-4">
-      <h1 className="text-lg font-bold tracking-tight">Articulation Pacer <span className="text-sky-400">Practice</span></h1>
-      <div className="flex gap-1.5"><IconButton label={isPlaying ? 'Pause' : 'Play'} onClick={playPause}>{isPlaying ? <Pause /> : <Play fill="currentColor" />}</IconButton><IconButton label="Reset" onClick={stop}><RotateCcw /></IconButton></div>
-    </header>
-    <section className="mb-4 rounded-2xl border border-slate-700 bg-slate-800 p-4 shadow-lg shadow-black/10">
-      <p className="text-xs font-bold tracking-widest text-sky-300">TARGET FOCUS: {day.toUpperCase()}</p>
-      <p className="mt-2 text-xl font-bold">{focus.target} <span className="font-medium text-slate-300">/ {focus.hindi}</span></p>
-      <p className="mt-3 text-sm leading-6 text-slate-300"><b className="text-slate-100">Articulator:</b> {focus.articulator}<br /><b className="text-slate-100">Practice:</b> {focus.contact}</p>
-    </section>
-    <section className="relative flex min-h-56 flex-1 overflow-hidden rounded-2xl border border-sky-500/40 bg-sky-900/65 shadow-xl shadow-sky-950/20">
-      {isPlaying ? <PacerText words={words} activeWordIndex={activeWordIndex} /> : <textarea value={text} onChange={(e) => setText(e.target.value)} aria-label="Practice text" className="w-full resize-none bg-transparent p-5 text-lg leading-8 text-sky-50 outline-none placeholder:text-sky-200/50" placeholder="Paste or write your practice text…" />}
-      {(status === 'Breathing' || status === 'Sighing') && <div className="absolute inset-0 grid place-items-center bg-slate-950/80 backdrop-blur-sm"><div className="text-center"><div className={`breath-orb mx-auto mb-4 grid h-20 w-20 place-items-center rounded-full border-4 border-sky-200/90 ${status === 'Breathing' ? 'breathe-in' : 'sigh-out'}`}><div className="h-9 w-9 rounded-full bg-sky-300/35" /></div><p className="text-2xl font-bold text-white">{status === 'Breathing' ? 'Breathe In…' : 'Sigh Out…'}</p><p className="mt-2 text-sm text-sky-200">{status === 'Breathing' ? 'Let your breath fill slowly' : 'Release with a gentle, continuous sigh'}</p></div></div>}
-      {completed && <div className="absolute inset-0 grid place-items-center bg-slate-950/82 p-5 backdrop-blur-sm"><div className="max-w-xs text-center"><p className="text-2xl font-bold text-white">Practice complete</p><p className="mt-2 text-sm text-sky-200">You paced through all {words.length} words. Notice what felt easy, then try again when ready.</p><div className="mt-5 flex justify-center gap-2"><button onClick={startPractice} className="rounded-lg bg-sky-400 px-3 py-2 text-sm font-bold text-slate-950">Practice again</button><button onClick={() => setCompleted(false)} className="rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-100">Edit text</button></div></div></div>}
-    </section>
-    <div className="my-4 flex flex-wrap gap-2">{checklist.map((item) => <label key={item} className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition ${checks.includes(item) ? 'border-emerald-400 bg-emerald-400/20 text-emerald-100' : 'border-slate-700 bg-slate-800 text-slate-300'}`}><input className="sr-only" type="checkbox" checked={checks.includes(item)} onChange={() => setChecks((items) => items.includes(item) ? items.filter((value) => value !== item) : [...items, item])} />{checks.includes(item) ? '✓ ' : ''}{item}</label>)}</div>
-    <footer className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900 p-4">
-      <div className="flex justify-between gap-2 text-xs font-bold tracking-widest text-slate-400"><span>STATUS: <span className={status === 'Ready' ? 'text-slate-200' : 'text-sky-300'}>{status === 'Sighing' ? 'Breathing' : status}</span></span><span>PROGRESS: <span className="text-sky-300">{words.length ? `${isPlaying ? activeWordIndex + 1 : 0}/${words.length}` : '0/0'}</span></span><span>WPM: <span className="text-sky-300">{wpm}</span></span></div>
-      <div className="flex items-center justify-between rounded-xl bg-slate-800 p-1"><IconButton label="Previous day" onClick={() => changeDay(-1)}><ChevronLeft /></IconButton><span className="text-sm font-semibold">{day}</span><IconButton label="Next day" onClick={() => changeDay(1)}><ChevronRight /></IconButton></div>
-      <div className="flex items-center gap-3"><span className="text-xs font-bold text-slate-400">60</span><input aria-label="Words per minute" type="range" min="60" max="200" value={wpm} onChange={(e) => setWpm(Number(e.target.value))} className="h-2 flex-1 cursor-pointer accent-sky-400" /><span className="text-xs font-bold text-slate-400">200</span></div>
-      <div><div className="mb-2 flex justify-between text-xs font-bold tracking-wider text-slate-400"><label htmlFor="pause-scale">PUNCTUATION PAUSE</label><span className="text-sky-300">{pauseScale}%</span></div><input id="pause-scale" aria-label="Punctuation pause length" type="range" min="0" max="200" step="10" value={pauseScale} onChange={(e) => setPauseScale(Number(e.target.value))} className="h-2 w-full cursor-pointer accent-sky-400" /></div>
-      <button onClick={() => setSoundEnabled((enabled) => !enabled)} className={`flex w-full items-center justify-center gap-2 rounded-xl border py-2 text-sm font-semibold transition ${soundEnabled ? 'border-sky-400 bg-sky-400/15 text-sky-100' : 'border-slate-700 bg-slate-800 text-slate-300'}`}>{soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}{soundEnabled ? 'Sound cues on' : 'Sound cues off'}</button>
-      <button onClick={shuffle} className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-sky-400"><Shuffle size={16} /> Shuffle practice text</button>
-    </footer>
-  </section></main>
+  return (
+    <main className="min-h-dvh overflow-x-hidden bg-[#030b16] text-slate-100">
+      <div className="app-shell mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-4 py-5 sm:px-8 sm:py-7 lg:px-10">
+        <header className="mb-5 flex flex-col gap-4 sm:mb-7 sm:flex-row sm:items-start sm:justify-between">
+          <h1 className="text-3xl font-black leading-tight text-white sm:text-4xl">
+            Articulation Pacer <span className="text-sky-400">Practice</span>
+          </h1>
+          <div className="grid grid-cols-2 gap-3 sm:flex">
+            <ActionButton label={isPlaying ? 'Pause' : 'Start'} onClick={playPause}>{isPlaying ? <Pause /> : <Play />}</ActionButton>
+            <ActionButton label="Reset" onClick={stop}><RotateCcw /></ActionButton>
+          </div>
+        </header>
+
+        <section className="target-card mb-5 grid gap-6 rounded-2xl border border-sky-400/60 bg-slate-900/65 p-4 shadow-2xl shadow-sky-950/30 sm:mb-6 sm:p-7 md:grid-cols-[1fr_auto_1.15fr] md:items-center">
+          <div className="flex items-center gap-4 sm:gap-6">
+            <div className="grid h-20 w-20 shrink-0 place-items-center rounded-full bg-sky-500/20 text-sky-300 shadow-inner shadow-sky-300/10 sm:h-24 sm:w-24">
+              <Target className="h-10 w-10 sm:h-12 sm:w-12" strokeWidth={2.5} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-black uppercase tracking-wider text-sky-300 sm:text-base">Target Focus</p>
+              <p className="mt-2 text-3xl font-black text-white sm:mt-3 sm:text-4xl">{day}</p>
+              <p className="mt-2 text-lg leading-7 text-slate-200 sm:mt-3 sm:text-xl sm:leading-8">{focus.target} / {focus.hindi}</p>
+            </div>
+          </div>
+          <div className="hidden h-36 w-px bg-slate-600/70 md:block" />
+          <div className="space-y-5 sm:space-y-6">
+            <InfoRow icon={UserRoundCog} title="Articulator" titleClass="text-violet-300" iconClass="bg-violet-500/20 text-violet-300">
+              {focus.articulator}
+            </InfoRow>
+            <InfoRow icon={GraduationCap} title="Practice" titleClass="text-emerald-300" iconClass="bg-emerald-500/18 text-emerald-300">
+              {focus.contact}
+            </InfoRow>
+          </div>
+        </section>
+
+        <section className="panel-card mb-5 rounded-2xl border border-slate-700/80 bg-slate-900/68 p-4 shadow-2xl shadow-black/20 sm:mb-6 sm:p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-5">
+            <p className="text-sm font-black uppercase tracking-wider text-blue-300 sm:text-base">Practice Text</p>
+            <span className="rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-xs font-bold text-slate-200 sm:px-4 sm:py-2 sm:text-sm">{text.length} characters</span>
+          </div>
+          <section className="practice-text-panel relative flex overflow-hidden rounded-xl border border-cyan-300/80 bg-[#071827]/80 shadow-inner shadow-sky-950/40">
+            {isPlaying ? (
+              <PacerText words={words} activeWordIndex={activeWordIndex} />
+            ) : (
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                aria-label="Practice text"
+                className="h-full w-full resize-none overflow-y-auto bg-transparent p-4 text-lg leading-8 text-sky-50 outline-none placeholder:text-sky-200/50 sm:p-5 sm:text-xl sm:leading-9"
+                placeholder="Paste or write your practice text..."
+              />
+            )}
+            {(status === 'Breathing' || status === 'Sighing') && <BreathOverlay status={status} />}
+            {completed && <CompletedOverlay words={words} startPractice={startPractice} setCompleted={setCompleted} />}
+          </section>
+          <div className="mt-5 flex flex-wrap gap-4">
+            {checklist.map((item) => <ChecklistPill key={item.label} item={item} checks={checks} setChecks={setChecks} />)}
+          </div>
+        </section>
+
+        <footer className="panel-card space-y-5 rounded-2xl border border-slate-700/80 bg-slate-900/70 p-4 shadow-2xl shadow-black/20 sm:p-6">
+          <div className="grid gap-4 text-sm font-black uppercase tracking-wider text-blue-300 sm:grid-cols-3 sm:items-center">
+            <StatusMetric label="Status"><span className="inline-flex items-center gap-2 normal-case tracking-normal text-white"><span className="h-3 w-3 rounded-full border-2 border-emerald-400" />{status === 'Sighing' ? 'Breathing' : status}</span></StatusMetric>
+            <StatusMetric label="Progress"><span className="normal-case tracking-normal text-white"><span className="text-sky-400">{words.length ? (isPlaying ? activeWordIndex + 1 : 0) : 0}</span> / {words.length}</span></StatusMetric>
+            <StatusMetric label="WPM" className="sm:justify-end"><Gauge size={18} className="text-slate-300" /><span className="normal-case tracking-normal text-sky-300">{wpm}</span></StatusMetric>
+          </div>
+
+          <div className="grid grid-cols-[auto_1fr_auto] items-center rounded-xl border border-slate-700/70 bg-slate-800/70 p-1">
+            <IconButton label="Previous day" onClick={() => changeDay(-1)}><ChevronLeft /></IconButton>
+            <div className="flex items-center justify-center gap-2 text-lg font-bold text-white sm:gap-3 sm:text-xl"><CalendarDays size={22} className="text-slate-300" />{day}</div>
+            <IconButton label="Next day" onClick={() => changeDay(1)}><ChevronRight /></IconButton>
+          </div>
+
+          <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-2 sm:gap-3">
+            <Turtle className="text-slate-300" size={24} />
+            <span className="text-base font-bold text-slate-300">60</span>
+            <input aria-label="Words per minute" type="range" min="60" max="200" value={wpm} onChange={(e) => setWpm(Number(e.target.value))} className="h-2 min-w-0 w-full cursor-pointer accent-sky-400" />
+            <span className="text-base font-bold text-slate-300">200</span>
+            <Rabbit className="text-slate-300" size={24} />
+          </div>
+
+          <div className="border-t border-slate-700/70 pt-5">
+            <div className="mb-4 flex justify-between gap-3 text-sm font-black uppercase tracking-wider text-blue-300 sm:text-base">
+              <span>Punctuation Delay</span>
+              <span className="text-sky-400">{punctuationDelaySeconds}s</span>
+            </div>
+            <div className="grid grid-cols-5 overflow-hidden rounded-xl border border-slate-700 bg-slate-950/30">
+              {punctuationDelayOptions.map((seconds) => (
+                <button key={seconds} type="button" onClick={() => setPunctuationDelaySeconds(seconds)} className={`border-r border-slate-700 py-3 text-base font-black transition last:border-r-0 sm:py-4 sm:text-lg ${punctuationDelaySeconds === seconds ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/25' : 'text-slate-200 hover:bg-slate-800'}`} aria-pressed={punctuationDelaySeconds === seconds}>
+                  {seconds}s
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={() => setSoundEnabled((enabled) => !enabled)} className={`flex w-full items-center justify-center gap-3 rounded-xl border py-3 text-base font-bold transition sm:py-3.5 sm:text-lg ${soundEnabled ? 'border-sky-400 bg-sky-500/15 text-sky-100' : 'border-slate-700 bg-slate-800/70 text-slate-200 hover:bg-slate-800'}`}>{soundEnabled ? <Volume2 size={22} /> : <VolumeX size={22} />}{soundEnabled ? 'Sound cues on' : 'Sound cues off'}</button>
+          <button onClick={shuffle} className="flex w-full items-center justify-center gap-3 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 px-3 py-4 text-lg font-black text-white shadow-lg shadow-sky-950/30 transition hover:brightness-110 sm:gap-4 sm:py-5 sm:text-xl"><Shuffle size={25} /> Shuffle practice text</button>
+        </footer>
+      </div>
+    </main>
+  )
 }
 
-function IconButton({ children, label, onClick }) { return <button onClick={onClick} aria-label={label} title={label} className="grid h-9 w-9 place-items-center rounded-lg text-sky-200 transition hover:bg-slate-700 hover:text-white">{children}</button> }
-function PacerText({ words, activeWordIndex }) { return <div className="flex w-full flex-wrap content-center gap-x-1.5 gap-y-2 overflow-y-auto p-5 text-lg leading-8 text-sky-50">{words.map((word, index) => <span key={`${word}-${index}`} className={index === activeWordIndex ? 'rounded bg-white px-1.5 py-0.5 font-semibold text-sky-950 shadow' : ''}>{word}</span>)}</div> }
+function ActionButton({ children, label, onClick }) {
+  return <button onClick={onClick} aria-label={label} title={label} className="grid h-16 w-full place-items-center rounded-2xl border border-slate-700 bg-slate-900/60 text-slate-100 shadow-lg shadow-black/20 transition hover:border-sky-400 hover:text-sky-300 sm:h-24 sm:w-24"><span className="grid place-items-center gap-1 sm:gap-2">{children}<span className="text-xs font-medium sm:text-sm">{label}</span></span></button>
+}
+
+function IconButton({ children, label, onClick }) {
+  return <button onClick={onClick} aria-label={label} title={label} className="grid h-12 w-12 place-items-center rounded-lg text-slate-200 transition hover:bg-slate-700 hover:text-white">{children}</button>
+}
+
+function InfoRow({ icon: Icon, title, children, iconClass, titleClass }) {
+  return <div className="flex items-center gap-4 sm:gap-5"><div className={`grid h-14 w-14 shrink-0 place-items-center rounded-full sm:h-16 sm:w-16 ${iconClass}`}><Icon className="h-7 w-7 sm:h-[30px] sm:w-[30px]" /></div><div className="min-w-0"><p className={`text-base font-black sm:text-lg ${titleClass}`}>{title}</p><p className="mt-1 text-sm leading-6 text-slate-300 sm:mt-2 sm:text-base">{children}</p></div></div>
+}
+
+function ChecklistPill({ item, checks, setChecks }) {
+  const Icon = item.icon
+  const selected = checks.includes(item.label)
+  return (
+    <label className={`check-pill check-pill-${item.tone} ${selected ? 'is-selected' : ''}`}>
+      <input className="sr-only" type="checkbox" checked={selected} onChange={() => setChecks((items) => items.includes(item.label) ? items.filter((value) => value !== item.label) : [...items, item.label])} />
+      <Icon size={23} />
+      <span>{item.label}</span>
+    </label>
+  )
+}
+
+function StatusMetric({ label, children, className = '' }) {
+  return <div className={`flex items-center gap-3 ${className}`}><span>{label}</span>{children}</div>
+}
+
+function BreathOverlay({ status }) {
+  return <div className="absolute inset-0 grid place-items-center bg-slate-950/82 backdrop-blur-sm"><div className="text-center"><div className={`breath-orb mx-auto mb-4 grid h-20 w-20 place-items-center rounded-full border-4 border-sky-200/90 ${status === 'Breathing' ? 'breathe-in' : 'sigh-out'}`}><div className="h-9 w-9 rounded-full bg-sky-300/35" /></div><p className="text-2xl font-bold text-white">{status === 'Breathing' ? 'Breathe In...' : 'Sigh Out...'}</p><p className="mt-2 text-sm text-sky-200">{status === 'Breathing' ? 'Let your breath fill slowly' : 'Release with a gentle, continuous sigh'}</p></div></div>
+}
+
+function CompletedOverlay({ words, startPractice, setCompleted }) {
+  return <div className="absolute inset-0 grid place-items-center bg-slate-950/84 p-5 backdrop-blur-sm"><div className="max-w-xs text-center"><p className="text-2xl font-bold text-white">Practice complete</p><p className="mt-2 text-sm text-sky-200">You paced through all {words.length} words. Notice what felt easy, then try again when ready.</p><div className="mt-5 flex justify-center gap-2"><button onClick={startPractice} className="rounded-lg bg-sky-400 px-3 py-2 text-sm font-bold text-slate-950">Practice again</button><button onClick={() => setCompleted(false)} className="rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-100">Edit text</button></div></div></div>
+}
+
+function PacerText({ words, activeWordIndex }) {
+  const scrollerRef = useRef(null)
+  const wordRefs = useRef([])
+
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    const activeWord = wordRefs.current[activeWordIndex]
+    if (!scroller || !activeWord) return
+
+    const targetTop = activeWord.offsetTop - (scroller.clientHeight / 2) + (activeWord.clientHeight / 2)
+    scroller.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+  }, [activeWordIndex])
+
+  return <div ref={scrollerRef} className="h-full w-full overflow-y-auto p-4 text-lg leading-8 text-sky-50 sm:p-5 sm:text-xl sm:leading-9"><div className="flex min-h-full flex-wrap content-center gap-x-2 gap-y-2">{words.map((word, index) => <span ref={(element) => { wordRefs.current[index] = element }} key={`${word}-${index}`} className={index === activeWordIndex ? 'rounded-md bg-white px-2 py-0.5 font-bold text-sky-950 shadow' : ''}>{word}</span>)}</div></div>
+}
