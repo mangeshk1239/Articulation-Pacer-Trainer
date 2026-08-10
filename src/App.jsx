@@ -8,12 +8,15 @@ import {
   Feather,
   Gauge,
   GraduationCap,
+  Library,
   Pause,
   Play,
   Rabbit,
   RotateCcw,
+  Save,
   Shuffle,
   Target,
+  Trash2,
   Turtle,
   UserRoundCog,
   Volume2,
@@ -30,6 +33,7 @@ const checklist = [
   { label: 'Paused at Punctuation', icon: CirclePause, tone: 'amber' },
 ]
 const punctuationDelayOptions = [2, 3, 5, 10, 15]
+const customPassagesStorageKey = 'articulation-pacer-custom-passages'
 const practiceModes = [
   { id: 'words', label: 'Word Pacer', unitLabel: 'words', paceLabel: 'WPM' },
   { id: 'syllables', label: 'Syllable Metronome', unitLabel: 'syllables', paceLabel: 'BPM' },
@@ -69,9 +73,28 @@ function savedValue(key, fallback) {
   return window.localStorage.getItem(key) ?? fallback
 }
 
+function loadCustomPassages() {
+  try {
+    const value = JSON.parse(savedValue(customPassagesStorageKey, '{}'))
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+
+    return Object.fromEntries(dayNames.map((day) => {
+      const passages = Array.isArray(value[day]) ? value[day].filter((item) => typeof item === 'string' && item.trim()) : []
+      return [day, passages]
+    }))
+  } catch {
+    return {}
+  }
+}
+
+function initialTextForDay(day, customPassages = loadCustomPassages()) {
+  return customPassages[day]?.[0] || practiceData[day]?.texts[0] || practiceData.Mon.texts[0]
+}
+
 export default function App() {
   const [dayIndex, setDayIndex] = useState(() => Math.max(0, dayNames.indexOf(savedValue('articulation-pacer-day', 'Mon'))))
-  const [text, setText] = useState(() => practiceData[savedValue('articulation-pacer-day', 'Mon')]?.texts[0] || practiceData.Mon.texts[0])
+  const [customPassages, setCustomPassages] = useState(() => loadCustomPassages())
+  const [text, setText] = useState(() => initialTextForDay(dayNames[Math.max(0, dayNames.indexOf(savedValue('articulation-pacer-day', 'Mon')))] || 'Mon'))
   const [wpm, setWpm] = useState(() => Math.min(200, Math.max(60, Number(savedValue('articulation-pacer-wpm', 100)) || 100)))
   const [practiceMode, setPracticeMode] = useState(() => practiceModes.some((mode) => mode.id === savedValue('articulation-pacer-practice-mode', 'words')) ? savedValue('articulation-pacer-practice-mode', 'words') : 'words')
   const [punctuationDelaySeconds, setPunctuationDelaySeconds] = useState(() => {
@@ -94,6 +117,9 @@ export default function App() {
   const audioContextRef = useRef(null)
   const day = dayNames[dayIndex]
   const focus = practiceData[day]
+  const savedPassagesForDay = customPassages[day] || []
+  const trimmedText = text.trim()
+  const isSavedForDay = savedPassagesForDay.some((passage) => passage.trim() === trimmedText)
   const words = useMemo(() => text.trim() ? text.trim().split(/\s+/) : [], [text])
   const syllables = useMemo(() => splitTextIntoSyllables(text), [text])
   const paceUnits = practiceMode === 'syllables' ? syllables : words
@@ -118,6 +144,7 @@ export default function App() {
   }, [soundEnabled])
 
   useEffect(() => { window.localStorage.setItem('articulation-pacer-day', dayNames[dayIndex]) }, [dayIndex])
+  useEffect(() => { window.localStorage.setItem(customPassagesStorageKey, JSON.stringify(customPassages)) }, [customPassages])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-wpm', String(wpm)) }, [wpm])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-practice-mode', practiceMode) }, [practiceMode])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-punctuation-delay-seconds', String(punctuationDelaySeconds)) }, [punctuationDelaySeconds])
@@ -166,14 +193,38 @@ export default function App() {
     stop()
     const next = (dayIndex + direction + dayNames.length) % dayNames.length
     setDayIndex(next)
-    setText(practiceData[dayNames[next]].texts[0])
+    setText(initialTextForDay(dayNames[next], customPassages))
     setChecks([])
     setCompleted(false)
+  }
+  const saveCurrentPassage = () => {
+    if (!trimmedText) return
+    stop()
+    setCompleted(false)
+    setCustomPassages((current) => {
+      const currentDayPassages = current[day] || []
+      const withoutDuplicate = currentDayPassages.filter((passage) => passage.trim() !== trimmedText)
+      return { ...current, [day]: [trimmedText, ...withoutDuplicate] }
+    })
+    setText(trimmedText)
+  }
+  const loadSavedPassage = (passage) => {
+    stop()
+    setCompleted(false)
+    setText(passage)
+  }
+  const deleteSavedPassage = (passageToDelete) => {
+    stop()
+    setCompleted(false)
+    setCustomPassages((current) => {
+      const nextDayPassages = (current[day] || []).filter((passage) => passage !== passageToDelete)
+      return { ...current, [day]: nextDayPassages }
+    })
   }
   const shuffle = () => {
     stop()
     setCompleted(false)
-    const choices = focus.texts.filter((item) => item !== text)
+    const choices = [...savedPassagesForDay, ...focus.texts].filter((item) => item !== text)
     setText(choices[Math.floor(Math.random() * choices.length)] || focus.texts[0])
   }
 
@@ -235,6 +286,15 @@ export default function App() {
           <div className="mt-5 flex flex-wrap gap-4">
             {checklist.map((item) => <ChecklistPill key={item.label} item={item} checks={checks} setChecks={setChecks} />)}
           </div>
+          <PassageLibrary
+            disabled={isPlaying}
+            isSavedForDay={isSavedForDay}
+            onDelete={deleteSavedPassage}
+            onLoad={loadSavedPassage}
+            onSave={saveCurrentPassage}
+            passages={savedPassagesForDay}
+            textHasContent={Boolean(trimmedText)}
+          />
         </section>
 
         <footer className="panel-card space-y-5 rounded-2xl border border-slate-700/80 bg-slate-900/70 p-4 shadow-2xl shadow-black/20 sm:p-6">
@@ -320,6 +380,47 @@ function ChecklistPill({ item, checks, setChecks }) {
 
 function StatusMetric({ label, children, className = '' }) {
   return <div className={`flex items-center gap-3 ${className}`}><span>{label}</span>{children}</div>
+}
+
+function PassageLibrary({ disabled, isSavedForDay, onDelete, onLoad, onSave, passages, textHasContent }) {
+  return (
+    <section className="mt-5 border-t border-slate-700/70 pt-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-blue-300 sm:text-base">
+          <Library size={18} />
+          <span>Saved Passages</span>
+        </div>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={disabled || !textHasContent || isSavedForDay}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-400/70 bg-sky-500/15 px-3 py-2 text-sm font-bold text-sky-100 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800/60 disabled:text-slate-500"
+        >
+          <Save size={16} />
+          {isSavedForDay ? 'Saved' : 'Save passage'}
+        </button>
+      </div>
+      {passages.length ? (
+        <div className="grid gap-2">
+          {passages.map((passage, index) => (
+            <div key={`${passage}-${index}`} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-xl border border-slate-700/70 bg-slate-950/25 p-2">
+              <button type="button" onClick={() => onLoad(passage)} disabled={disabled} className="min-w-0 truncate rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500">
+                {passage}
+              </button>
+              <button type="button" onClick={() => onLoad(passage)} disabled={disabled} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-sky-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500">
+                Load
+              </button>
+              <button type="button" onClick={() => onDelete(passage)} disabled={disabled} aria-label="Delete saved passage" title="Delete saved passage" className="grid h-9 w-9 place-items-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-rose-400 hover:bg-rose-500/15 hover:text-rose-200 disabled:cursor-not-allowed disabled:text-slate-600">
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-xl border border-slate-700/70 bg-slate-950/25 px-3 py-3 text-sm font-medium text-slate-400">No saved passages for this target yet.</p>
+      )}
+    </section>
+  )
 }
 
 function BreathOverlay({ status }) {

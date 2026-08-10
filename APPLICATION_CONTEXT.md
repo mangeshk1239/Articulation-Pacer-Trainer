@@ -15,7 +15,7 @@ It is a self-guided practice aid, not a diagnostic or clinical treatment tool.
 5. The user chooses a practice mode: **Word Pacer** or **Syllable Metronome**.
 6. In Word Pacer mode, the app highlights one word at a time at the selected WPM. In Syllable Metronome mode, the app approximates syllable breaks and highlights one syllable-like unit per beat at the selected BPM.
 7. During playback, the fixed-height text panel automatically scrolls to keep the active unit in view.
-8. At the end of the passage, the pacer resets to Ready. The user can reflect with the four practice checks, change the WPM/BPM, set a punctuation delay, toggle sound cues, shuffle passages, or select another target.
+8. At the end of the passage, the pacer resets to Ready. The user can reflect with the four practice checks, save/load/delete custom passages for the current target, change the WPM/BPM, set a punctuation delay, toggle sound cues, shuffle passages, or select another target.
 
 ## Practice content
 
@@ -30,7 +30,7 @@ It is a self-guided practice aid, not a diagnostic or clinical treatment tool.
 - Sun — vowels
 - Clusters — Str, Pl, Tr, Bl
 
-Each category includes its target label, Hindi descriptor, articulator instruction, contact instruction, and three passages. The Shuffle action chooses another passage from the current category.
+Each category includes its target label, Hindi descriptor, articulator instruction, contact instruction, and three built-in passages. Users can also save custom passages per category/day in `localStorage`. The newest saved custom passage for a day loads automatically when that day is selected. The Shuffle action chooses from both saved custom passages and built-in passages for the current category.
 
 ## Pacer states
 
@@ -57,8 +57,9 @@ The main controls are:
 - Sound cue toggle
 - Shuffle practice text button
 - Four reflection check pills
+- Saved Passages library with save, load, and delete actions for the active day/target
 
-The app stores the selected day, WPM/BPM value, practice mode, punctuation delay, checklist state, and sound setting in `localStorage`.
+The app stores the selected day, WPM/BPM value, practice mode, punctuation delay, checklist state, sound setting, and custom passages in `localStorage`. Custom passages are stored under `articulation-pacer-custom-passages` as an object keyed by day/category. Saving a passage trims the current text and moves duplicate content to the top instead of creating repeated entries.
 
 ## Code structure
 
