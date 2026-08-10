@@ -444,5 +444,5 @@ function PacerText({ units, activeUnitIndex }) {
     scroller.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
   }, [activeUnitIndex])
 
-  return <div ref={scrollerRef} className="h-full w-full overflow-y-auto p-4 text-lg leading-8 text-sky-50 sm:p-5 sm:text-xl sm:leading-9"><div className="flex min-h-full flex-wrap content-center gap-x-2 gap-y-2">{units.map((unit, index) => <span ref={(element) => { unitRefs.current[index] = element }} key={`${unit}-${index}`} className={index === activeUnitIndex ? 'rounded-md bg-white px-2 py-0.5 font-bold text-sky-950 shadow' : ''}>{unit}</span>)}</div></div>
+  return <div ref={scrollerRef} className="h-full w-full overflow-y-auto p-4 text-lg leading-8 text-sky-50 sm:p-5 sm:text-xl sm:leading-9"><div className="flex min-h-full flex-wrap content-start gap-x-2 gap-y-2">{units.map((unit, index) => <span ref={(element) => { unitRefs.current[index] = element }} key={`${unit}-${index}`} className={`pace-unit ${index === activeUnitIndex ? 'is-active' : ''}`}>{unit}</span>)}</div></div>
 }
