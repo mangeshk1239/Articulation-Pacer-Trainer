@@ -30,10 +30,38 @@ const checklist = [
   { label: 'Paused at Punctuation', icon: CirclePause, tone: 'amber' },
 ]
 const punctuationDelayOptions = [2, 3, 5, 10, 15]
+const practiceModes = [
+  { id: 'words', label: 'Word Pacer', unitLabel: 'words', paceLabel: 'WPM' },
+  { id: 'syllables', label: 'Syllable Metronome', unitLabel: 'syllables', paceLabel: 'BPM' },
+]
 
-function punctuationPauseMs(word, punctuationDelaySeconds) {
-  if (/[.,;:!?][”"')\]]*$/.test(word)) return punctuationDelaySeconds * 1000
+function punctuationPauseMs(unit, punctuationDelaySeconds) {
+  if (/[.,;:!?][”"')\]]*$/.test(unit)) return punctuationDelaySeconds * 1000
   return 0
+}
+
+function splitWordIntoSyllables(word) {
+  const leading = word.match(/^[^A-Za-z]*/)?.[0] ?? ''
+  const trailing = word.match(/[^A-Za-z]*$/)?.[0] ?? ''
+  const core = word.slice(leading.length, word.length - trailing.length)
+
+  if (!core || core.length <= 3) return [word]
+
+  const syllables = core.match(/[^aeiouy]*[aeiouy]+(?:[^aeiouy](?![aeiouy]))?/gi)
+
+  if (!syllables || syllables.length <= 1) return [word]
+
+  const rebuilt = syllables.map((syllable, index) => {
+    const prefix = index === 0 ? leading : ''
+    const suffix = index === syllables.length - 1 ? trailing : ''
+    return `${prefix}${syllable}${suffix}`
+  })
+
+  return rebuilt.filter(Boolean)
+}
+
+function splitTextIntoSyllables(text) {
+  return text.trim() ? text.trim().split(/\s+/).flatMap(splitWordIntoSyllables) : []
 }
 
 function savedValue(key, fallback) {
@@ -45,6 +73,7 @@ export default function App() {
   const [dayIndex, setDayIndex] = useState(() => Math.max(0, dayNames.indexOf(savedValue('articulation-pacer-day', 'Mon'))))
   const [text, setText] = useState(() => practiceData[savedValue('articulation-pacer-day', 'Mon')]?.texts[0] || practiceData.Mon.texts[0])
   const [wpm, setWpm] = useState(() => Math.min(200, Math.max(60, Number(savedValue('articulation-pacer-wpm', 100)) || 100)))
+  const [practiceMode, setPracticeMode] = useState(() => practiceModes.some((mode) => mode.id === savedValue('articulation-pacer-practice-mode', 'words')) ? savedValue('articulation-pacer-practice-mode', 'words') : 'words')
   const [punctuationDelaySeconds, setPunctuationDelaySeconds] = useState(() => {
     const savedDelay = Number(savedValue('articulation-pacer-punctuation-delay-seconds', 2))
     return punctuationDelayOptions.includes(savedDelay) ? savedDelay : 2
@@ -66,6 +95,9 @@ export default function App() {
   const day = dayNames[dayIndex]
   const focus = practiceData[day]
   const words = useMemo(() => text.trim() ? text.trim().split(/\s+/) : [], [text])
+  const syllables = useMemo(() => splitTextIntoSyllables(text), [text])
+  const paceUnits = practiceMode === 'syllables' ? syllables : words
+  const selectedMode = practiceModes.find((mode) => mode.id === practiceMode) || practiceModes[0]
   const isPlaying = status !== 'Ready'
 
   const playTone = useCallback((frequency, duration = 0.09, volume = 0.035) => {
@@ -87,6 +119,7 @@ export default function App() {
 
   useEffect(() => { window.localStorage.setItem('articulation-pacer-day', dayNames[dayIndex]) }, [dayIndex])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-wpm', String(wpm)) }, [wpm])
+  useEffect(() => { window.localStorage.setItem('articulation-pacer-practice-mode', practiceMode) }, [practiceMode])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-punctuation-delay-seconds', String(punctuationDelaySeconds)) }, [punctuationDelaySeconds])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-checks', JSON.stringify(checks)) }, [checks])
   useEffect(() => { window.localStorage.setItem('articulation-pacer-sound', String(soundEnabled)) }, [soundEnabled])
@@ -109,11 +142,11 @@ export default function App() {
 
   useEffect(() => {
     if (status !== 'Running') return
-    if (!words.length) { setStatus('Ready'); return }
-    const currentWord = words[activeWordIndex]
-    const delay = (60 / wpm) * 1000 + punctuationPauseMs(currentWord, punctuationDelaySeconds)
+    if (!paceUnits.length) { setStatus('Ready'); return }
+    const currentUnit = paceUnits[activeWordIndex]
+    const delay = (60 / wpm) * 1000 + punctuationPauseMs(currentUnit, punctuationDelaySeconds)
     const timer = setTimeout(() => {
-      if (activeWordIndex >= words.length - 1) {
+      if (activeWordIndex >= paceUnits.length - 1) {
         setStatus('Ready')
         setActiveWordIndex(0)
         setCompleted(true)
@@ -123,11 +156,12 @@ export default function App() {
       setActiveWordIndex((current) => current + 1)
     }, delay)
     return () => clearTimeout(timer)
-  }, [status, wpm, punctuationDelaySeconds, words, activeWordIndex, playTone])
+  }, [status, wpm, punctuationDelaySeconds, paceUnits, activeWordIndex, playTone])
 
   const stop = () => { setStatus('Ready'); setActiveWordIndex(0) }
-  const startPractice = () => { if (!words.length) return; setCompleted(false); setActiveWordIndex(0); playTone(392, 0.22, 0.05); setStatus('Breathing') }
+  const startPractice = () => { if (!paceUnits.length) return; setCompleted(false); setActiveWordIndex(0); playTone(392, 0.22, 0.05); setStatus('Breathing') }
   const playPause = () => { isPlaying ? stop() : startPractice() }
+  const changePracticeMode = (mode) => { stop(); setCompleted(false); setPracticeMode(mode) }
   const changeDay = (direction) => {
     stop()
     const next = (dayIndex + direction + dayNames.length) % dayNames.length
@@ -185,7 +219,7 @@ export default function App() {
           </div>
           <section className="practice-text-panel relative flex overflow-hidden rounded-xl border border-cyan-300/80 bg-[#071827]/80 shadow-inner shadow-sky-950/40">
             {isPlaying ? (
-              <PacerText words={words} activeWordIndex={activeWordIndex} />
+              <PacerText units={paceUnits} activeUnitIndex={activeWordIndex} />
             ) : (
               <textarea
                 value={text}
@@ -196,7 +230,7 @@ export default function App() {
               />
             )}
             {(status === 'Breathing' || status === 'Sighing') && <BreathOverlay status={status} />}
-            {completed && <CompletedOverlay words={words} startPractice={startPractice} setCompleted={setCompleted} />}
+            {completed && <CompletedOverlay unitCount={paceUnits.length} unitLabel={selectedMode.unitLabel} startPractice={startPractice} setCompleted={setCompleted} />}
           </section>
           <div className="mt-5 flex flex-wrap gap-4">
             {checklist.map((item) => <ChecklistPill key={item.label} item={item} checks={checks} setChecks={setChecks} />)}
@@ -206,8 +240,22 @@ export default function App() {
         <footer className="panel-card space-y-5 rounded-2xl border border-slate-700/80 bg-slate-900/70 p-4 shadow-2xl shadow-black/20 sm:p-6">
           <div className="grid gap-4 text-sm font-black uppercase tracking-wider text-blue-300 sm:grid-cols-3 sm:items-center">
             <StatusMetric label="Status"><span className="inline-flex items-center gap-2 normal-case tracking-normal text-white"><span className="h-3 w-3 rounded-full border-2 border-emerald-400" />{status === 'Sighing' ? 'Breathing' : status}</span></StatusMetric>
-            <StatusMetric label="Progress"><span className="normal-case tracking-normal text-white"><span className="text-sky-400">{words.length ? (isPlaying ? activeWordIndex + 1 : 0) : 0}</span> / {words.length}</span></StatusMetric>
-            <StatusMetric label="WPM" className="sm:justify-end"><Gauge size={18} className="text-slate-300" /><span className="normal-case tracking-normal text-sky-300">{wpm}</span></StatusMetric>
+            <StatusMetric label="Progress"><span className="normal-case tracking-normal text-white"><span className="text-sky-400">{paceUnits.length ? (isPlaying ? activeWordIndex + 1 : 0) : 0}</span> / {paceUnits.length}</span></StatusMetric>
+            <StatusMetric label={selectedMode.paceLabel} className="sm:justify-end"><Gauge size={18} className="text-slate-300" /><span className="normal-case tracking-normal text-sky-300">{wpm}</span></StatusMetric>
+          </div>
+
+          <div>
+            <div className="mb-3 flex justify-between gap-3 text-sm font-black uppercase tracking-wider text-blue-300 sm:text-base">
+              <span>Practice Mode</span>
+              <span className="text-sky-400">{selectedMode.unitLabel}</span>
+            </div>
+            <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-slate-700 bg-slate-950/30">
+              {practiceModes.map((mode) => (
+                <button key={mode.id} type="button" onClick={() => changePracticeMode(mode.id)} className={`border-r border-slate-700 px-3 py-3 text-sm font-black transition last:border-r-0 sm:text-base ${practiceMode === mode.id ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/25' : 'text-slate-200 hover:bg-slate-800'}`} aria-pressed={practiceMode === mode.id}>
+                  {mode.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-[auto_1fr_auto] items-center rounded-xl border border-slate-700/70 bg-slate-800/70 p-1">
@@ -219,7 +267,7 @@ export default function App() {
           <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-2 sm:gap-3">
             <Turtle className="text-slate-300" size={24} />
             <span className="text-base font-bold text-slate-300">60</span>
-            <input aria-label="Words per minute" type="range" min="60" max="200" value={wpm} onChange={(e) => setWpm(Number(e.target.value))} className="h-2 min-w-0 w-full cursor-pointer accent-sky-400" />
+            <input aria-label={selectedMode.paceLabel === 'BPM' ? 'Beats per minute' : 'Words per minute'} type="range" min="60" max="200" value={wpm} onChange={(e) => setWpm(Number(e.target.value))} className="h-2 min-w-0 w-full cursor-pointer accent-sky-400" />
             <span className="text-base font-bold text-slate-300">200</span>
             <Rabbit className="text-slate-300" size={24} />
           </div>
@@ -278,22 +326,22 @@ function BreathOverlay({ status }) {
   return <div className="absolute inset-0 grid place-items-center bg-slate-950/82 backdrop-blur-sm"><div className="text-center"><div className={`breath-orb mx-auto mb-4 grid h-20 w-20 place-items-center rounded-full border-4 border-sky-200/90 ${status === 'Breathing' ? 'breathe-in' : 'sigh-out'}`}><div className="h-9 w-9 rounded-full bg-sky-300/35" /></div><p className="text-2xl font-bold text-white">{status === 'Breathing' ? 'Breathe In...' : 'Sigh Out...'}</p><p className="mt-2 text-sm text-sky-200">{status === 'Breathing' ? 'Let your breath fill slowly' : 'Release with a gentle, continuous sigh'}</p></div></div>
 }
 
-function CompletedOverlay({ words, startPractice, setCompleted }) {
-  return <div className="absolute inset-0 grid place-items-center bg-slate-950/84 p-5 backdrop-blur-sm"><div className="max-w-xs text-center"><p className="text-2xl font-bold text-white">Practice complete</p><p className="mt-2 text-sm text-sky-200">You paced through all {words.length} words. Notice what felt easy, then try again when ready.</p><div className="mt-5 flex justify-center gap-2"><button onClick={startPractice} className="rounded-lg bg-sky-400 px-3 py-2 text-sm font-bold text-slate-950">Practice again</button><button onClick={() => setCompleted(false)} className="rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-100">Edit text</button></div></div></div>
+function CompletedOverlay({ unitCount, unitLabel, startPractice, setCompleted }) {
+  return <div className="absolute inset-0 grid place-items-center bg-slate-950/84 p-5 backdrop-blur-sm"><div className="max-w-xs text-center"><p className="text-2xl font-bold text-white">Practice complete</p><p className="mt-2 text-sm text-sky-200">You paced through all {unitCount} {unitLabel}. Notice what felt easy, then try again when ready.</p><div className="mt-5 flex justify-center gap-2"><button onClick={startPractice} className="rounded-lg bg-sky-400 px-3 py-2 text-sm font-bold text-slate-950">Practice again</button><button onClick={() => setCompleted(false)} className="rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-100">Edit text</button></div></div></div>
 }
 
-function PacerText({ words, activeWordIndex }) {
+function PacerText({ units, activeUnitIndex }) {
   const scrollerRef = useRef(null)
-  const wordRefs = useRef([])
+  const unitRefs = useRef([])
 
   useEffect(() => {
     const scroller = scrollerRef.current
-    const activeWord = wordRefs.current[activeWordIndex]
-    if (!scroller || !activeWord) return
+    const activeUnit = unitRefs.current[activeUnitIndex]
+    if (!scroller || !activeUnit) return
 
-    const targetTop = activeWord.offsetTop - (scroller.clientHeight / 2) + (activeWord.clientHeight / 2)
+    const targetTop = activeUnit.offsetTop - (scroller.clientHeight / 2) + (activeUnit.clientHeight / 2)
     scroller.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
-  }, [activeWordIndex])
+  }, [activeUnitIndex])
 
-  return <div ref={scrollerRef} className="h-full w-full overflow-y-auto p-4 text-lg leading-8 text-sky-50 sm:p-5 sm:text-xl sm:leading-9"><div className="flex min-h-full flex-wrap content-center gap-x-2 gap-y-2">{words.map((word, index) => <span ref={(element) => { wordRefs.current[index] = element }} key={`${word}-${index}`} className={index === activeWordIndex ? 'rounded-md bg-white px-2 py-0.5 font-bold text-sky-950 shadow' : ''}>{word}</span>)}</div></div>
+  return <div ref={scrollerRef} className="h-full w-full overflow-y-auto p-4 text-lg leading-8 text-sky-50 sm:p-5 sm:text-xl sm:leading-9"><div className="flex min-h-full flex-wrap content-center gap-x-2 gap-y-2">{units.map((unit, index) => <span ref={(element) => { unitRefs.current[index] = element }} key={`${unit}-${index}`} className={index === activeUnitIndex ? 'rounded-md bg-white px-2 py-0.5 font-bold text-sky-950 shadow' : ''}>{unit}</span>)}</div></div>
 }
